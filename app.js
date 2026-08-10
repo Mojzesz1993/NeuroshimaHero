@@ -1,24 +1,15 @@
-Masz w 100% rację. Automatyczna synchronizacja w obie strony (bez żadnego klikania „Zapisz”) to absolutny standard i najlepsze rozwiązanie dla aplikacji czasu rzeczywistego.
-
-Wcześniej rozdzieliłem to przyciskiem, ponieważ w czystym JavaScripcie ciągłe nadpisywanie całej strony danymi z chmury powoduje tzw. „kradzież focusu” (jeśli gracz wpisuje historię postaci, a MG w tym samym momencie odbierze mu HP, graczowi zniknie kursor z pola tekstowego).
-
-Rozwiązałem to za pomocą **chirurgicznych aktualizacji DOM**. Oznacza to, że Panel MG wysyła nowe statystyki w tle, a przeglądarka gracza podmienia *tylko* same cyferki zdrowia i punktów akcji, nie przerywając mu gry ani pisania notatek. Zniknął też całkowicie przycisk "Zapisz zmiany gracza" – teraz Mistrz Gry po prostu wpisuje nowe HP, a chmura aktualizuje się sama po pół sekundy.
-
-Oto ostateczna, kompletna wersja pliku **`app.js`**, która realizuje płynną synchronizację dwukierunkową. Podmień całą jego zawartość:
-
-```javascript
 /* ═══════════════════════════════════════════════════════
    NEUROSHIMA RPG — KARTA POSTACI (MULTIPLAYER + MG LOGIC)
    ═══════════════════════════════════════════════════════ */
 
 // ─── KONFIGURACJA FIREBASE & MG ───
 const firebaseConfig = {
-    apiKey: "AIzaSyD-TUTAJ_WKLEJ_SWOJ_KLUCZ",
-    authDomain: "twoj-projekt.firebaseapp.com",
-    projectId: "twoj-projekt",
-    storageBucket: "twoj-projekt.appspot.com",
-    messagingSenderId: "123456789012",
-    appId: "1:123456789012:web:abcdef123456789"
+  apiKey: "AIzaSyBlP27hV8sTGfqk898i1fFVvqiNE8etKHI",
+  authDomain: "neuroshimarpg-1efb1.firebaseapp.com",
+  projectId: "neuroshimarpg-1efb1",
+  storageBucket: "neuroshimarpg-1efb1.firebasestorage.app",
+  messagingSenderId: "672079265154",
+  appId: "1:672079265154:web:e2d66965662df9ea38239b"
 };
 
 // TAJNE HASŁO DO PANELU MISTRZA GRY
@@ -1088,5 +1079,3 @@ document.addEventListener('DOMContentLoaded', function() {
     renderHealth();
     setupEventListeners();
 });
-
-```
