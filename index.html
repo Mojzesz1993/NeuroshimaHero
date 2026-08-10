@@ -9,16 +9,14 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
-    <!-- Firebase SDK (Compat) dla łatwej integracji w czasie rzeczywistym -->
+    <!-- Firebase SDK Compat (bez modułów, działa bezpośrednio w przeglądarce) -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 </head>
 <body>
 
-    <!-- Scanline overlay -->
     <div class="scanlines" aria-hidden="true"></div>
 
-    <!-- Multiplayer Lobby Bar -->
     <div class="multiplayer-bar">
         <div class="mp-container">
             <div class="mp-group">
@@ -35,7 +33,6 @@
                 <span class="status-dot"></span> <span id="mp-status-text">Rozłączony</span>
             </div>
         </div>
-        <!-- Lista aktywnych graczy w pokoju -->
         <div class="mp-players-bar" id="mp-players-container">
             <span class="mp-players-label">Gracze online:</span>
             <div id="mp-players-list" class="mp-players-chips">
@@ -44,7 +41,6 @@
         </div>
     </div>
 
-    <!-- Header -->
     <header class="main-header">
         <div class="header-content">
             <div class="header-title">
@@ -80,10 +76,8 @@
         </div>
     </header>
 
-    <!-- Main Content -->
     <main class="sheet-container" id="sheet-main-container">
 
-        <!-- ═══════════════ DANE PODSTAWOWE ═══════════════ -->
         <section class="sheet-section" id="section-info">
             <div class="section-header" data-section="info">
                 <div class="section-header-left">
@@ -132,7 +126,6 @@
             </div>
         </section>
 
-        <!-- ═══════════════ S.P.E.C.I.A.L. ═══════════════ -->
         <section class="sheet-section" id="section-attributes">
             <div class="section-header" data-section="attributes">
                 <div class="section-header-left">
@@ -141,12 +134,9 @@
                 </div>
                 <span class="toggle-icon" aria-hidden="true">▾</span>
             </div>
-            <div class="section-content open" id="content-attributes">
-                <!-- Rendered by JS -->
-            </div>
+            <div class="section-content open" id="content-attributes"></div>
         </section>
 
-        <!-- ═══════════════ UMIEJĘTNOŚCI ═══════════════ -->
         <section class="sheet-section" id="section-skills">
             <div class="section-header" data-section="skills">
                 <div class="section-header-left">
@@ -155,12 +145,9 @@
                 </div>
                 <span class="toggle-icon" aria-hidden="true">▾</span>
             </div>
-            <div class="section-content open" id="content-skills">
-                <!-- Rendered by JS -->
-            </div>
+            <div class="section-content open" id="content-skills"></div>
         </section>
 
-        <!-- ═══════════════ ZDROWIE I STAN ═══════════════ -->
         <section class="sheet-section" id="section-health">
             <div class="section-header" data-section="health">
                 <div class="section-header-left">
@@ -169,12 +156,9 @@
                 </div>
                 <span class="toggle-icon" aria-hidden="true">▾</span>
             </div>
-            <div class="section-content open" id="content-health">
-                <!-- Rendered by JS -->
-            </div>
+            <div class="section-content open" id="content-health"></div>
         </section>
 
-        <!-- ═══════════════ BROŃ ═══════════════ -->
         <section class="sheet-section" id="section-weapons">
             <div class="section-header" data-section="weapons">
                 <div class="section-header-left">
@@ -191,7 +175,6 @@
             </div>
         </section>
 
-        <!-- ═══════════════ EKWIPUNEK ═══════════════ -->
         <section class="sheet-section" id="section-items">
             <div class="section-header" data-section="items">
                 <div class="section-header-left">
@@ -208,7 +191,6 @@
             </div>
         </section>
 
-        <!-- ═══════════════ MUTACJE ═══════════════ -->
         <section class="sheet-section" id="section-mutations">
             <div class="section-header" data-section="mutations">
                 <div class="section-header-left">
@@ -225,7 +207,6 @@
             </div>
         </section>
 
-        <!-- ═══════════════ NOTATKI ═══════════════ -->
         <section class="sheet-section" id="section-notes">
             <div class="section-header" data-section="notes">
                 <div class="section-header-left">
@@ -241,13 +222,11 @@
 
     </main>
 
-    <!-- Footer -->
     <footer class="main-footer">
         <p>☢ NEUROSHIMA RPG — GENERATOR KART POSTACI (MULTIPLAYER) ☢</p>
         <p class="footer-sub">Dane synchronizują się automatycznie w czasie rzeczywistym</p>
     </footer>
 
-    <!-- Confirmation Modal -->
     <div class="modal-overlay hidden" id="modal-confirm">
         <div class="modal">
             <div class="modal-header">
@@ -262,11 +241,10 @@
         </div>
     </div>
 
-    <!-- Toast notification -->
     <div class="toast hidden" id="toast">
         <span id="toast-message"></span>
     </div>
 
-    <script type="module"src="app.js"></script>
+    <script src="app.js"></script>
 </body>
 </html>
