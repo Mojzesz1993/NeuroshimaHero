@@ -1,16 +1,19 @@
 /* ═══════════════════════════════════════════════════════
-   NEUROSHIMA RPG — KARTA POSTACI (MULTIPLAYER LOGIC)
+   NEUROSHIMA RPG — KARTA POSTACI (MULTIPLAYER + MG LOGIC)
    ═══════════════════════════════════════════════════════ */
 
-// ─── FIREBASE CONFIGURATION ───
+// ─── KONFIGURACJA FIREBASE & MG ───
 const firebaseConfig = {
-  apiKey: "AIzaSyBlP27hV8sTGfqk898i1fFVvqiNE8etKHI",
-  authDomain: "neuroshimarpg-1efb1.firebaseapp.com",
-  projectId: "neuroshimarpg-1efb1",
-  storageBucket: "neuroshimarpg-1efb1.firebasestorage.app",
-  messagingSenderId: "672079265154",
-  appId: "1:672079265154:web:e2d66965662df9ea38239b"
+    apiKey: "AIzaSyD-TUTAJ_WKLEJ_SWOJ_KLUCZ",
+    authDomain: "twoj-projekt.firebaseapp.com",
+    projectId: "twoj-projekt",
+    storageBucket: "twoj-projekt.appspot.com",
+    messagingSenderId: "123456789012",
+    appId: "1:123456789012:web:abcdef123456789"
 };
+
+// TAJNE HASŁO DO PANELU MISTRZA GRY (możesz je zmienić)
+const GM_PASSWORD = "neuroshima2026";
 
 let db = null;
 let isFirebaseInitialized = false;
@@ -25,16 +28,19 @@ try {
     console.warn("Firebase initialization warning:", e);
 }
 
-// ─── STAN MULTIPLAYER ───
+// ─── STAN APLIKACJI ───
 let mpState = {
     room: 'neuroshima-sesja-1',
     playerId: 'gracz_' + Math.random().toString(36).substr(2, 6),
     playerName: 'Wędrowiec ' + Math.floor(Math.random() * 100),
     isConnected: false,
     isEditable: true,
+    isGM: false,              // Czy użytkownik jest zalogowany jako MG
     inspectingPlayerId: null,
     unsubscribe: null,
-    unsubscribeList: null
+    unsubscribeList: null,
+    unsubscribeSession: null,
+    unsubscribeMgPlayers: null
 };
 
 // ─── DEFINICJE DANYCH ───
@@ -64,8 +70,6 @@ const ATTR_MAX = 10;
 const SKILL_MIN = 0;
 const SKILL_MAX = 20;
 
-// ─── STAN POSTACI ───
-
 function createDefaultState() {
     const skills = {};
     SKILL_CATEGORIES.forEach(cat => {
@@ -75,30 +79,10 @@ function createDefaultState() {
     });
 
     return {
-        info: {
-            name: '',
-            nickname: '',
-            age: '',
-            faction: '',
-            factionCustom: '',
-            description: ''
-        },
-        attributes: {
-            strength: 5,
-            perception: 5,
-            endurance: 5,
-            charisma: 5,
-            intelligence: 5,
-            agility: 5,
-            luck: 5
-        },
+        info: { name: '', nickname: '', age: '', faction: '', factionCustom: '', description: '' },
+        attributes: { strength: 5, perception: 5, endurance: 5, charisma: 5, intelligence: 5, agility: 5, luck: 5 },
         skills: skills,
-        health: {
-            hp: 100,
-            maxHp: 100,
-            ap: 10,
-            radiation: 0
-        },
+        health: { hp: 100, maxHp: 100, ap: 10, radiation: 0 },
         status: [],
         weapons: [],
         items: [],
@@ -119,28 +103,16 @@ function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
 }
 
-function $(selector) {
-    return document.querySelector(selector);
-}
-
-function $$(selector) {
-    return document.querySelectorAll(selector);
-}
-
-// ─── TOAST ───
+function $(selector) { return document.querySelector(selector); }
+function $$(selector) { return document.querySelectorAll(selector); }
 
 let toastTimeout = null;
-
 function showToast(message, duration = 3000) {
     const toast = $('#toast');
     const toastMsg = $('#toast-message');
     toastMsg.textContent = message;
     toast.classList.remove('hidden');
-
-    requestAnimationFrame(() => {
-        toast.classList.add('show');
-    });
-
+    requestAnimationFrame(() => toast.classList.add('show'));
     if (toastTimeout) clearTimeout(toastTimeout);
     toastTimeout = setTimeout(() => {
         toast.classList.remove('show');
@@ -148,10 +120,7 @@ function showToast(message, duration = 3000) {
     }, duration);
 }
 
-// ─── MODAL ───
-
 let modalCallback = null;
-
 function showModal(title, message, onConfirm) {
     const overlay = $('#modal-confirm');
     $('#modal-title').textContent = title;
@@ -165,8 +134,6 @@ function hideModal() {
     modalCallback = null;
 }
 
-// ─── PULSE ANIMACJA DLA PRZYCISKÓW ───
-
 function pulseButton(btn) {
     btn.classList.remove('pulse');
     void btn.offsetWidth;
@@ -174,7 +141,7 @@ function pulseButton(btn) {
     setTimeout(() => btn.classList.remove('pulse'), 250);
 }
 
-// ─── RENDEROWANIE: ATRYBUTY ───
+// ─── RENDEROWANIE: KARTA POSTACI ───
 
 function renderAttributes() {
     const container = $('#content-attributes');
@@ -190,21 +157,17 @@ function renderAttributes() {
                     <div class="attribute-info">
                         <div class="attribute-name">${attr.name}</div>
                         <div class="attribute-controls">
-                            ${!isReadOnly ? `<button class="btn-minus" data-action="attr-dec" data-attr="${attr.key}" aria-label="Zmniejsz ${attr.name}">−</button>` : ''}
+                            ${!isReadOnly ? `<button class="btn-minus" data-action="attr-dec" data-attr="${attr.key}">−</button>` : ''}
                             <span class="attribute-value">${value}</span>
-                            ${!isReadOnly ? `<button class="btn-plus" data-action="attr-inc" data-attr="${attr.key}" aria-label="Zwiększ ${attr.name}">+</button>` : ''}
+                            ${!isReadOnly ? `<button class="btn-plus" data-action="attr-inc" data-attr="${attr.key}">+</button>` : ''}
                         </div>
                     </div>
                 </div>
-                <div class="attribute-bar">
-                    <div class="attribute-bar-fill" style="width: ${percent}%; background: ${attr.color};"></div>
-                </div>
+                <div class="attribute-bar"><div class="attribute-bar-fill" style="width: ${percent}%; background: ${attr.color};"></div></div>
             </div>`;
         }).join('')}
     </div>`;
 }
-
-// ─── RENDEROWANIE: UMIEJĘTNOŚCI ───
 
 function renderSkills() {
     const container = $('#content-skills');
@@ -217,16 +180,14 @@ function renderSkills() {
             <div class="skill-row">
                 <span class="skill-name">${skill}</span>
                 <div class="skill-controls">
-                    ${!isReadOnly ? `<button class="btn-minus" data-action="skill-dec" data-skill="${skill}" aria-label="Zmniejsz ${skill}">−</button>` : ''}
+                    ${!isReadOnly ? `<button class="btn-minus" data-action="skill-dec" data-skill="${skill}">−</button>` : ''}
                     <span class="skill-value">${state.skills[skill]}</span>
-                    ${!isReadOnly ? `<button class="btn-plus" data-action="skill-inc" data-skill="${skill}" aria-label="Zwiększ ${skill}">+</button>` : ''}
+                    ${!isReadOnly ? `<button class="btn-plus" data-action="skill-inc" data-skill="${skill}">+</button>` : ''}
                 </div>
             </div>`).join('')}
         </div>`).join('')}
     </div>`;
 }
-
-// ─── RENDEROWANIE: ZDROWIE ───
 
 function renderHealth() {
     const container = $('#content-health');
@@ -237,17 +198,17 @@ function renderHealth() {
         <div class="health-stat">
             <div class="health-stat-label">PUNKTY ŻYCIA (HP)</div>
             <div class="health-stat-controls">
-                ${!isReadOnly ? `<button class="btn-minus" data-action="hp-dec" aria-label="Zmniejsz HP">−</button>` : ''}
+                ${!isReadOnly ? `<button class="btn-minus" data-action="hp-dec">−</button>` : ''}
                 <span class="health-stat-value" id="hp-value">${h.hp} / ${h.maxHp}</span>
-                ${!isReadOnly ? `<button class="btn-plus" data-action="hp-inc" aria-label="Zwiększ HP">+</button>` : ''}
+                ${!isReadOnly ? `<button class="btn-plus" data-action="hp-inc">+</button>` : ''}
             </div>
         </div>
         <div class="health-stat">
             <div class="health-stat-label">PUNKTY AKCJI (AP)</div>
             <div class="health-stat-controls">
-                ${!isReadOnly ? `<button class="btn-minus" data-action="ap-dec" aria-label="Zmniejsz AP">−</button>` : ''}
+                ${!isReadOnly ? `<button class="btn-minus" data-action="ap-dec">−</button>` : ''}
                 <span class="health-stat-value" id="ap-value">${h.ap}</span>
-                ${!isReadOnly ? `<button class="btn-plus" data-action="ap-inc" aria-label="Zwiększ AP">+</button>` : ''}
+                ${!isReadOnly ? `<button class="btn-plus" data-action="ap-inc">+</button>` : ''}
             </div>
         </div>
     </div>
@@ -256,23 +217,18 @@ function renderHealth() {
             <span class="radiation-label">☢ PROMIENIOWANIE</span>
             <span class="radiation-value" id="radiation-value">${h.radiation}%</span>
         </div>
-        <div class="radiation-bar">
-            <div class="radiation-bar-fill" id="radiation-fill" style="width: ${h.radiation}%"></div>
-        </div>
-        ${!isReadOnly ? `<input type="range" class="radiation-slider" id="radiation-slider" min="0" max="100" value="${h.radiation}" aria-label="Poziom promieniowania">` : ''}
+        <div class="radiation-bar"><div class="radiation-bar-fill" id="radiation-fill" style="width: ${h.radiation}%"></div></div>
+        ${!isReadOnly ? `<input type="range" class="radiation-slider" id="radiation-slider" min="0" max="100" value="${h.radiation}">` : ''}
     </div>
     <div class="status-container">
         <span class="status-label">STAN:</span>
         <div class="status-chips">
             ${STATUS_OPTIONS.map(s => `
             <button class="status-chip ${state.status.includes(s) ? 'active' : ''} ${isReadOnly ? 'disabled-chip' : ''}"
-                    ${!isReadOnly ? `data-status="${s}" data-action="toggle-status"` : 'disabled'}>${s}</button>
-            `).join('')}
+                    ${!isReadOnly ? `data-status="${s}" data-action="toggle-status"` : 'disabled'}>${s}</button>`).join('')}
         </div>
     </div>`;
 }
-
-// ─── RENDEROWANIE: BROŃ ───
 
 function renderWeaponCard(weapon, index) {
     const isReadOnly = mpState.inspectingPlayerId !== null || !mpState.isEditable;
@@ -280,37 +236,24 @@ function renderWeaponCard(weapon, index) {
     <div class="weapon-card" data-weapon-id="${weapon.id}">
         <div class="weapon-card-header">
             <span class="weapon-card-title">BROŃ #${index + 1}</span>
-            ${!isReadOnly ? `<button class="btn-remove" data-action="remove-weapon" data-weapon-id="${weapon.id}" aria-label="Usuń broń">✕</button>` : ''}
+            ${!isReadOnly ? `<button class="btn-remove" data-action="remove-weapon" data-weapon-id="${weapon.id}">✕</button>` : ''}
         </div>
         <div class="weapon-fields">
-            <div class="form-group">
-                <label>Nazwa</label>
-                <input type="text" data-weapon-id="${weapon.id}" data-field="name"
-                       value="${escapeHtml(weapon.name)}" placeholder="Nazwa broni..." autocomplete="off" ${isReadOnly ? 'disabled' : ''}>
-            </div>
-            <div class="form-group">
-                <label>Obrażenia</label>
-                <input type="text" data-weapon-id="${weapon.id}" data-field="damage"
-                       value="${escapeHtml(weapon.damage)}" placeholder="np. 2k6+3" autocomplete="off" ${isReadOnly ? 'disabled' : ''}>
-            </div>
+            <div class="form-group"><label>Nazwa</label><input type="text" data-weapon-id="${weapon.id}" data-field="name" value="${escapeHtml(weapon.name)}" ${isReadOnly ? 'disabled' : ''}></div>
+            <div class="form-group"><label>Obrażenia</label><input type="text" data-weapon-id="${weapon.id}" data-field="damage" value="${escapeHtml(weapon.damage)}" ${isReadOnly ? 'disabled' : ''}></div>
         </div>
         <div class="ammo-section">
             <span class="ammo-label">NABOJE</span>
             <div class="ammo-controls">
-                ${!isReadOnly ? `<button class="btn-minus" data-weapon-id="${weapon.id}" data-action="ammo-dec" aria-label="Zmniejsz naboje">−</button>` : ''}
+                ${!isReadOnly ? `<button class="btn-minus" data-weapon-id="${weapon.id}" data-action="ammo-dec">−</button>` : ''}
                 <span class="ammo-value" data-weapon-id="${weapon.id}">${weapon.ammo}</span>
-                ${!isReadOnly ? `<button class="btn-plus" data-weapon-id="${weapon.id}" data-action="ammo-inc" aria-label="Zwiększ naboje">+</button>` : ''}
+                ${!isReadOnly ? `<button class="btn-plus" data-weapon-id="${weapon.id}" data-action="ammo-inc">+</button>` : ''}
             </div>
         </div>
     </div>`;
 }
 
-function renderAllWeapons() {
-    const list = $('#weapons-list');
-    list.innerHTML = state.weapons.map((w, i) => renderWeaponCard(w, i)).join('');
-}
-
-// ─── RENDEROWANIE: PRZEDMIOTY ───
+function renderAllWeapons() { $('#weapons-list').innerHTML = state.weapons.map((w, i) => renderWeaponCard(w, i)).join(''); }
 
 function renderItemCard(item, index) {
     const isReadOnly = mpState.inspectingPlayerId !== null || !mpState.isEditable;
@@ -318,37 +261,23 @@ function renderItemCard(item, index) {
     <div class="item-card" data-item-id="${item.id}">
         <div class="item-card-header">
             <span class="item-card-title">PRZEDMIOT #${index + 1}</span>
-            ${!isReadOnly ? `<button class="btn-remove" data-action="remove-item" data-item-id="${item.id}" aria-label="Usuń przedmiot">✕</button>` : ''}
+            ${!isReadOnly ? `<button class="btn-remove" data-action="remove-item" data-item-id="${item.id}">✕</button>` : ''}
         </div>
         <div class="item-fields">
-            <div class="form-group">
-                <label>Nazwa</label>
-                <input type="text" data-item-id="${item.id}" data-field="name"
-                       value="${escapeHtml(item.name)}" placeholder="Nazwa przedmiotu..." autocomplete="off" ${isReadOnly ? 'disabled' : ''}>
-            </div>
-            <div class="form-group">
-                <label>Ilość</label>
+            <div class="form-group"><label>Nazwa</label><input type="text" data-item-id="${item.id}" data-field="name" value="${escapeHtml(item.name)}" ${isReadOnly ? 'disabled' : ''}></div>
+            <div class="form-group"><label>Ilość</label>
                 <div class="item-quantity">
-                    ${!isReadOnly ? `<button class="btn-minus" data-item-id="${item.id}" data-action="item-qty-dec" aria-label="Zmniejsz ilość">−</button>` : ''}
+                    ${!isReadOnly ? `<button class="btn-minus" data-item-id="${item.id}" data-action="item-qty-dec">−</button>` : ''}
                     <span class="item-quantity-value" data-item-id="${item.id}">${item.quantity}</span>
-                    ${!isReadOnly ? `<button class="btn-plus" data-item-id="${item.id}" data-action="item-qty-inc" aria-label="Zwiększ ilość">+</button>` : ''}
+                    ${!isReadOnly ? `<button class="btn-plus" data-item-id="${item.id}" data-action="item-qty-inc">+</button>` : ''}
                 </div>
             </div>
-            <div class="form-group full-width">
-                <label>Opis (opcjonalny)</label>
-                <input type="text" data-item-id="${item.id}" data-field="description"
-                       value="${escapeHtml(item.description)}" placeholder="Krótki opis..." autocomplete="off" ${isReadOnly ? 'disabled' : ''}>
-            </div>
+            <div class="form-group full-width"><label>Opis</label><input type="text" data-item-id="${item.id}" data-field="description" value="${escapeHtml(item.description)}" ${isReadOnly ? 'disabled' : ''}></div>
         </div>
     </div>`;
 }
 
-function renderAllItems() {
-    const list = $('#items-list');
-    list.innerHTML = state.items.map((item, i) => renderItemCard(item, i)).join('');
-}
-
-// ─── RENDEROWANIE: MUTACJE ───
+function renderAllItems() { $('#items-list').innerHTML = state.items.map((item, i) => renderItemCard(item, i)).join(''); }
 
 function renderMutationCard(mutation, index) {
     const isReadOnly = mpState.inspectingPlayerId !== null || !mpState.isEditable;
@@ -356,29 +285,16 @@ function renderMutationCard(mutation, index) {
     <div class="mutation-card" data-mutation-id="${mutation.id}">
         <div class="mutation-card-header">
             <span class="mutation-card-title">MUTACJA #${index + 1}</span>
-            ${!isReadOnly ? `<button class="btn-remove" data-action="remove-mutation" data-mutation-id="${mutation.id}" aria-label="Usuń mutację">✕</button>` : ''}
+            ${!isReadOnly ? `<button class="btn-remove" data-action="remove-mutation" data-mutation-id="${mutation.id}">✕</button>` : ''}
         </div>
         <div class="mutation-fields">
-            <div class="form-group">
-                <label>Nazwa</label>
-                <input type="text" data-mutation-id="${mutation.id}" data-field="name"
-                       value="${escapeHtml(mutation.name)}" placeholder="Nazwa mutacji..." autocomplete="off" ${isReadOnly ? 'disabled' : ''}>
-            </div>
-            <div class="form-group full-width">
-                <label>Opis / Efekt</label>
-                <textarea data-mutation-id="${mutation.id}" data-field="description"
-                          rows="2" placeholder="Opisz efekt mutacji..." ${isReadOnly ? 'disabled' : ''}>${escapeHtml(mutation.description)}</textarea>
-            </div>
+            <div class="form-group"><label>Nazwa</label><input type="text" data-mutation-id="${mutation.id}" data-field="name" value="${escapeHtml(mutation.name)}" ${isReadOnly ? 'disabled' : ''}></div>
+            <div class="form-group full-width"><label>Opis</label><textarea data-mutation-id="${mutation.id}" data-field="description" rows="2" ${isReadOnly ? 'disabled' : ''}>${escapeHtml(mutation.description)}</textarea></div>
         </div>
     </div>`;
 }
 
-function renderAllMutations() {
-    const list = $('#mutations-list');
-    list.innerHTML = state.mutations.map((m, i) => renderMutationCard(m, i)).join('');
-}
-
-// ─── POMOCNICZE ───
+function renderAllMutations() { $('#mutations-list').innerHTML = state.mutations.map((m, i) => renderMutationCard(m, i)).join(''); }
 
 function escapeHtml(str) {
     if (!str) return '';
@@ -386,8 +302,6 @@ function escapeHtml(str) {
     div.appendChild(document.createTextNode(str));
     return div.innerHTML;
 }
-
-// ─── ZBIERANIE STANU Z DOM ───
 
 function gatherState() {
     state.info.name = $('#char-name').value.trim();
@@ -403,46 +317,36 @@ function gatherState() {
     }
     state.info.description = $('#char-description').value.trim();
 
-    state.weapons.forEach(weapon => {
-        const card = $(`.weapon-card[data-weapon-id="${weapon.id}"]`);
+    state.weapons.forEach(w => {
+        const card = $(`.weapon-card[data-weapon-id="${w.id}"]`);
         if (card) {
-            const nameInput = card.querySelector('[data-field="name"]');
-            const dmgInput = card.querySelector('[data-field="damage"]');
-            if (nameInput) weapon.name = nameInput.value.trim();
-            if (dmgInput) weapon.damage = dmgInput.value.trim();
+            w.name = card.querySelector('[data-field="name"]').value.trim();
+            w.damage = card.querySelector('[data-field="damage"]').value.trim();
         }
     });
 
-    state.items.forEach(item => {
-        const card = $(`.item-card[data-item-id="${item.id}"]`);
+    state.items.forEach(i => {
+        const card = $(`.item-card[data-item-id="${i.id}"]`);
         if (card) {
-            const nameInput = card.querySelector('[data-field="name"]');
-            const descInput = card.querySelector('[data-field="description"]');
-            if (nameInput) item.name = nameInput.value.trim();
-            if (descInput) item.description = descInput.value.trim();
+            i.name = card.querySelector('[data-field="name"]').value.trim();
+            i.description = card.querySelector('[data-field="description"]').value.trim();
         }
     });
 
-    state.mutations.forEach(mutation => {
-        const card = $(`.mutation-card[data-mutation-id="${mutation.id}"]`);
+    state.mutations.forEach(m => {
+        const card = $(`.mutation-card[data-mutation-id="${m.id}"]`);
         if (card) {
-            const nameInput = card.querySelector('[data-field="name"]');
-            const descInput = card.querySelector('[data-field="description"]');
-            if (nameInput) mutation.name = nameInput.value.trim();
-            if (descInput) mutation.description = descInput.value.trim();
+            m.name = card.querySelector('[data-field="name"]').value.trim();
+            m.description = card.querySelector('[data-field="description"]').value.trim();
         }
     });
 
     state.notes = $('#char-notes').value;
-
     return JSON.parse(JSON.stringify(state));
 }
 
-// ─── ŁADOWANIE STANU DO DOM ───
-
 function loadState(newState) {
     const defaults = createDefaultState();
-
     state.info = { ...defaults.info, ...(newState.info || {}) };
     state.attributes = { ...defaults.attributes, ...(newState.attributes || {}) };
     state.health = { ...defaults.health, ...(newState.health || {}) };
@@ -452,9 +356,7 @@ function loadState(newState) {
     state.skills = { ...defaults.skills };
     if (newState.skills) {
         Object.keys(newState.skills).forEach(key => {
-            if (key in state.skills) {
-                state.skills[key] = clamp(newState.skills[key], SKILL_MIN, SKILL_MAX);
-            }
+            if (key in state.skills) state.skills[key] = clamp(newState.skills[key], SKILL_MIN, SKILL_MAX);
         });
     }
 
@@ -462,17 +364,9 @@ function loadState(newState) {
         state.attributes[key] = clamp(state.attributes[key], ATTR_MIN, ATTR_MAX);
     });
 
-    state.weapons = Array.isArray(newState.weapons)
-        ? newState.weapons.map(w => ({ id: w.id || generateId(), name: w.name || '', damage: w.damage || '', ammo: w.ammo || 0 }))
-        : [];
-
-    state.items = Array.isArray(newState.items)
-        ? newState.items.map(i => ({ id: i.id || generateId(), name: i.name || '', quantity: i.quantity || 1, description: i.description || '' }))
-        : [];
-
-    state.mutations = Array.isArray(newState.mutations)
-        ? newState.mutations.map(m => ({ id: m.id || generateId(), name: m.name || '', description: m.description || '' }))
-        : [];
+    state.weapons = Array.isArray(newState.weapons) ? newState.weapons.map(w => ({ id: w.id || generateId(), name: w.name || '', damage: w.damage || '', ammo: w.ammo || 0 })) : [];
+    state.items = Array.isArray(newState.items) ? newState.items.map(i => ({ id: i.id || generateId(), name: i.name || '', quantity: i.quantity || 1, description: i.description || '' })) : [];
+    state.mutations = Array.isArray(newState.mutations) ? newState.mutations.map(m => ({ id: m.id || generateId(), name: m.name || '', description: m.description || '' })) : [];
 
     $('#char-name').value = state.info.name;
     $('#char-nickname').value = state.info.nickname;
@@ -507,9 +401,7 @@ function loadState(newState) {
         } else {
             selectEl.value = '';
         }
-        if (state.info.faction !== '__custom__') {
-            $('#custom-faction-group').classList.add('hidden');
-        }
+        if (state.info.faction !== '__custom__') $('#custom-faction-group').classList.add('hidden');
     }
 
     renderAttributes();
@@ -520,15 +412,12 @@ function loadState(newState) {
     renderAllMutations();
 }
 
-// ─── MULTIPLAYER SYNC (FIREBASE) ───
+// ─── MULTIPLAYER & MG SYNC (FIREBASE) ───
 
 let saveTimeout = null;
-
 function triggerCloudSave() {
-    if (!mpState.isConnected || !isFirebaseInitialized || mpState.inspectingPlayerId !== null || !mpState.isEditable) return;
-    
+    if (!mpState.isConnected || !isFirebaseInitialized || mpState.inspectingPlayerId !== null || !mpState.isEditable || mpState.isGM) return;
     gatherState();
-    
     if (saveTimeout) clearTimeout(saveTimeout);
     saveTimeout = setTimeout(() => {
         const docRef = db.collection('sessions').doc(mpState.room).collection('players').doc(mpState.playerId);
@@ -540,9 +429,7 @@ function triggerCloudSave() {
             maxHp: state.health.maxHp,
             data: state,
             lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
-        }, { merge: true }).catch(err => {
-            console.error("Cloud save error:", err);
-        });
+        }, { merge: true }).catch(err => console.error("Cloud save error:", err));
     }, 400);
 }
 
@@ -567,22 +454,21 @@ function connectToSession() {
 
     $('#mp-status-text').textContent = 'Połączono (' + mpState.room + ')';
     $('#mp-status-indicator').classList.add('connected');
-    $('#btn-toggle-edit').classList.remove('hidden');
+    if (!mpState.isGM) $('#btn-toggle-edit').classList.remove('hidden');
     showToast('✓ Połączono z sesją: ' + mpState.room);
 
     if (mpState.unsubscribeList) mpState.unsubscribeList();
-    
+    if (mpState.unsubscribeSession) mpState.unsubscribeSession();
+
+    // Nasłuchuj graczy do listy online
     const playersRef = db.collection('sessions').doc(mpState.room).collection('players');
-    
     mpState.unsubscribeList = playersRef.onSnapshot(snapshot => {
         const playersListEl = $('#mp-players-list');
         playersListEl.innerHTML = '';
-        
         if (snapshot.empty) {
             playersListEl.innerHTML = '<span class="text-muted">Brak innych graczy w pokoju</span>';
             return;
         }
-
         snapshot.forEach(doc => {
             const pData = doc.data();
             const pId = doc.id;
@@ -596,21 +482,35 @@ function connectToSession() {
                 <span class="mp-player-name-text">${escapeHtml(pData.playerName)} (${escapeHtml(pData.characterName || 'Brak imienia')})</span>
                 <span class="mp-player-hp">[HP: ${pData.hp}/${pData.maxHp}]</span>
             `;
-
             chip.addEventListener('click', () => {
-                if (isMe) {
-                    switchToMyCharacter();
-                } else {
-                    inspectPlayer(pId, pData.playerName);
-                }
+                if (mpState.isGM) return; // MG ma swój panel zarządzania
+                if (isMe) switchToMyCharacter();
+                else inspectPlayer(pId, pData.playerName);
             });
-
             playersListEl.appendChild(chip);
         });
     });
 
-    triggerCloudSave();
-    switchToMyCharacter();
+    // Nasłuchuj ogólnych komunikatów od MG dla wszystkich graczy
+    const sessionRef = db.collection('sessions').doc(mpState.room);
+    mpState.unsubscribeSession = sessionRef.onSnapshot(doc => {
+        if (doc.exists) {
+            const sData = doc.data();
+            if (sData.broadcast && sData.broadcastTimestamp) {
+                // Pokaż komunikat jeśli jest nowy (ostatnie 15 sekund)
+                const now = Date.now();
+                const bTime = sData.broadcastTimestamp.toMillis ? sData.broadcastTimestamp.toMillis() : now;
+                if (now - bTime < 15000 && sData.broadcastSender !== mpState.playerId) {
+                    showToast('📢 KOMUNIKAT OD MG: ' + sData.broadcast, 8000);
+                }
+            }
+        }
+    });
+
+    if (!mpState.isGM) {
+        triggerCloudSave();
+        switchToMyCharacter();
+    }
 }
 
 function inspectPlayer(targetPlayerId, targetPlayerName) {
@@ -628,9 +528,7 @@ function inspectPlayer(targetPlayerId, targetPlayerName) {
     mpState.unsubscribe = docRef.onSnapshot(doc => {
         if (doc.exists) {
             const data = doc.data();
-            if (data.data) {
-                loadState(data.data);
-            }
+            if (data.data) loadState(data.data);
         }
     });
 }
@@ -642,16 +540,19 @@ function switchToMyCharacter() {
         mpState.unsubscribe = null;
     }
 
-    $('#btn-toggle-edit').classList.remove('hidden');
-    updateEditModeBadgeAndUI();
+    if (!mpState.isGM) {
+        $('#btn-toggle-edit').classList.remove('hidden');
+        updateEditModeBadgeAndUI();
+    }
     $('#mp-back-to-mine').classList.add('hidden');
+    $('#mp-back-to-mg').classList.add('hidden');
 
     showToast('✏ Wrzucono do Twojej postaci');
     loadState(state);
 }
 
 function toggleEditMode() {
-    if (mpState.inspectingPlayerId !== null) return;
+    if (mpState.inspectingPlayerId !== null || mpState.isGM) return;
     mpState.isEditable = !mpState.isEditable;
     updateEditModeBadgeAndUI();
     loadState(state);
@@ -667,7 +568,6 @@ function toggleEditMode() {
 function updateEditModeBadgeAndUI() {
     const badge = $('#view-mode-badge');
     const toggleBtn = $('#btn-toggle-edit');
-
     if (mpState.isEditable) {
         badge.textContent = 'TRYB EDYCJI';
         badge.className = 'badge-edit';
@@ -679,20 +579,190 @@ function updateEditModeBadgeAndUI() {
     }
 }
 
-// ─── EKSPORT JSON ───
+// ─── PANEL MISTRZA GRY (MG) ───
+
+function openMgLoginModal() {
+    $('#mg-password-input').value = '';
+    $('#modal-mg-login').classList.remove('hidden');
+    $('#mg-password-input').focus();
+}
+
+function closeMgLoginModal() {
+    $('#modal-mg-login').classList.add('hidden');
+}
+
+function loginAsGM() {
+    const pass = $('#mg-password-input').value;
+    if (pass !== GM_PASSWORD) {
+        showToast('✗ Niepoprawne hasło Mistrza Gry!', 4000);
+        return;
+    }
+    closeMgLoginModal();
+    activateGMMode();
+}
+
+function activateGMMode() {
+    mpState.isGM = true;
+    showToast('👑 Zalogowano pomyślnie jako Mistrz Gry!');
+
+    $('#view-mode-badge').textContent = 'PANEL MISTRZA GRY';
+    $('#view-mode-badge').className = 'badge-inspect';
+
+    $('#sheet-main-container').classList.add('hidden');
+    $('#mg-dashboard-container').classList.remove('hidden');
+    $('#btn-toggle-edit').classList.add('hidden');
+    $('#mp-back-to-mine').classList.add('hidden');
+    $('#mp-back-to-mg').classList.remove('hidden');
+
+    // Załaduj zawartość notatek MG z Firestore
+    loadMgContent();
+    // Załaduj listę graczy do zarządzania
+    initMgPlayersManager();
+}
+
+function deactivateGMMode() {
+    mpState.isGM = false;
+    if (mpState.unsubscribeMgPlayers) {
+        mpState.unsubscribeMgPlayers();
+        mpState.unsubscribeMgPlayers = null;
+    }
+
+    $('#mg-dashboard-container').classList.add('hidden');
+    $('#sheet-main-container').classList.remove('hidden');
+    $('#mp-back-to-mg').classList.add('hidden');
+
+    switchToMyCharacter();
+    showToast('Wylogowano z Panelu MG');
+}
+
+function initMgPlayersManager() {
+    if (!isFirebaseInitialized) return;
+    const container = $('#mg-players-list-container');
+    const playersRef = db.collection('sessions').doc(mpState.room).collection('players');
+
+    if (mpState.unsubscribeMgPlayers) mpState.unsubscribeMgPlayers();
+
+    mpState.unsubscribeMgPlayers = playersRef.onSnapshot(snapshot => {
+        container.innerHTML = '';
+        if (snapshot.empty) {
+            container.innerHTML = '<p class="text-muted">Brak podłączonych graczy w pokoju.</p>';
+            return;
+        }
+
+        snapshot.forEach(doc => {
+            const pId = doc.id;
+            const p = doc.data();
+            const d = p.data || {};
+
+            const card = document.createElement('div');
+            card.className = 'mg-player-card';
+            card.innerHTML = `
+                <div class="mg-player-card-header">
+                    <span>${escapeHtml(p.playerName)} ➔ <strong>${escapeHtml(p.characterName || 'Bez imienia')}</strong> (${escapeHtml(p.faction || 'Brak frakcji')})</span>
+                </div>
+                <div class="mg-player-controls-grid">
+                    <div class="form-group">
+                        <label>HP (Aktualne / Max)</label>
+                        <div class="mg-inline-inputs">
+                            <input type="number" class="mg-input-hp" data-pid="${pId}" value="${d.health ? d.health.hp : 100}">
+                            <span>/</span>
+                            <input type="number" class="mg-input-maxhp" data-pid="${pId}" value="${d.health ? d.health.maxHp : 100}">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Punkty Akcji (AP)</label>
+                        <input type="number" class="mg-input-ap" data-pid="${pId}" value="${d.health ? d.health.ap : 10}">
+                    </div>
+                    <div class="form-group">
+                        <label>Promieniowanie (%)</label>
+                        <input type="number" class="mg-input-rad" data-pid="${pId}" min="0" max="100" value="${d.health ? d.health.radiation : 0}">
+                    </div>
+                </div>
+                <div class="mg-player-actions">
+                    <button class="btn btn-primary btn-sm mg-save-player-btn" data-pid="${pId}">Zapisz zmiany gracza</button>
+                    <button class="btn btn-secondary btn-sm mg-inspect-player-btn" data-pid="${pId}" data-pname="${escapeHtml(p.playerName)}">Podgląd pełnej karty</button>
+                </div>
+            `;
+            container.appendChild(card);
+        });
+    });
+}
+
+// Zapis edycji gracza przez MG
+document.addEventListener('click', function(e) {
+    if (e.target.classList.contains('mg-save-player-btn')) {
+        const pId = e.target.dataset.pid;
+        const card = e.target.closest('.mg-player-card');
+        const newHp = parseInt(card.querySelector('.mg-input-hp').value);
+        const newMaxHp = parseInt(card.querySelector('.mg-input-maxhp').value);
+        const newAp = parseInt(card.querySelector('.mg-input-ap').value);
+        const newRad = parseInt(card.querySelector('.mg-input-rad').value);
+
+        const docRef = db.collection('sessions').doc(mpState.room).collection('players').doc(pId);
+        docRef.get().then(doc => {
+            if (doc.exists) {
+                const pData = doc.data();
+                if (pData.data) {
+                    pData.data.health.hp = newHp;
+                    pData.data.health.maxHp = newMaxHp;
+                    pData.data.health.ap = newAp;
+                    pData.data.health.radiation = newRad;
+
+                    docRef.update({
+                        hp: newHp,
+                        maxHp: newMaxHp,
+                        data: pData.data
+                    }).then(() => {
+                        showToast('✓ Zaktualizowano postać gracza!');
+                    });
+                }
+            }
+        });
+    }
+
+    if (e.target.classList.contains('mg-inspect-player-btn')) {
+        const pId = e.target.dataset.pid;
+        const pName = e.target.dataset.pname;
+        deactivateGMMode();
+        inspectPlayer(pId, pName);
+        $('#mp-back-to-mg').classList.remove('hidden');
+    }
+});
+
+// Zapis zawartości notatek, lokacji, fabuły i NPC w chmurze
+function saveMgContent(targetKey, textValue) {
+    if (!isFirebaseInitialized) return;
+    const docRef = db.collection('sessions').doc(mpState.room).collection('gm_data').doc('content');
+    docRef.set({ [targetKey]: textValue }, { merge: true }).then(() => {
+        showToast('✓ Zapisano pomyślnie w chmurze!');
+    });
+}
+
+function loadMgContent() {
+    if (!isFirebaseInitialized) return;
+    const docRef = db.collection('sessions').doc(mpState.room).collection('gm_data').doc('content');
+    docRef.get().then(doc => {
+        if (doc.exists) {
+            const data = doc.data();
+            if (data.locations) $('#mg-content-locations').value = data.locations;
+            if (data.story) $('#mg-content-story').value = data.story;
+            if (data.npcs) $('#mg-content-npcs').value = data.npcs;
+            if (data.notes) $('#mg-content-notes').value = data.notes;
+        }
+    });
+}
+
+// ─── EKSPORT / IMPORT / NOWA ───
 
 function exportJSON() {
     const data = gatherState();
     const exportData = JSON.parse(JSON.stringify(data));
-    if (exportData.info.faction === '__custom__') {
-        exportData.info.faction = exportData.info.factionCustom || 'Nieznana';
-    }
+    if (exportData.info.faction === '__custom__') exportData.info.faction = exportData.info.factionCustom || 'Nieznana';
     delete exportData.info.factionCustom;
 
     const json = JSON.stringify(exportData, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-
     const a = document.createElement('a');
     const fileName = (data.info.name || 'postac').replace(/[^a-zA-Z0-9_\u00C0-\u024F-]/g, '_');
     a.href = url;
@@ -701,45 +771,29 @@ function exportJSON() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-
     showToast('☢ Karta wyeksportowana do JSON!');
 }
 
-// ─── IMPORT JSON ───
-
 function importJSON(file) {
-    if (mpState.inspectingPlayerId !== null || !mpState.isEditable) {
-        showToast('✗ Nie możesz edytować ani importować w tym trybie!', 4000);
-        return;
-    }
+    if (mpState.inspectingPlayerId !== null || !mpState.isEditable || mpState.isGM) return;
     const reader = new FileReader();
     reader.onload = function(e) {
         try {
             const data = JSON.parse(e.target.result);
             if (!data || typeof data !== 'object') throw new Error('Nieprawidłowy format pliku');
             if (!data.info && !data.attributes) throw new Error('Plik nie zawiera danych postaci');
-
-            if (data.info && data.info.faction && !data.info.factionCustom) {
-                const knownFactions = ['Stalowcy', 'Hegemonia', 'Moloch', 'Outpost', 'Neojunkiezi', 'Mutanci', 'Niezrzeszeni', ''];
-                if (!knownFactions.includes(data.info.faction)) {
-                    data.info.factionCustom = data.info.faction;
-                    data.info.faction = '__custom__';
-                }
-            }
-
             loadState(data);
             triggerCloudSave();
             showToast('✓ Postać wczytana pomyślnie!');
         } catch (err) {
             showToast('✗ Błąd: ' + err.message, 4000);
-            console.error('Import error:', err);
         }
     };
     reader.readAsText(file);
 }
 
 function resetCharacter() {
-    if (mpState.inspectingPlayerId !== null || !mpState.isEditable) return;
+    if (mpState.inspectingPlayerId !== null || !mpState.isEditable || mpState.isGM) return;
     state = createDefaultState();
     loadState(state);
     triggerCloudSave();
@@ -749,11 +803,59 @@ function resetCharacter() {
 // ─── OBSŁUGA ZDARZEŃ ───
 
 function setupEventListeners() {
-
     $('#mp-connect-btn').addEventListener('click', connectToSession);
     $('#mp-back-to-mine').addEventListener('click', switchToMyCharacter);
+    $('#mp-back-to-mg').addEventListener('click', activateGMMode);
     $('#btn-toggle-edit').addEventListener('click', toggleEditMode);
 
+    // MG Modal
+    $('#mp-mg-login-btn').addEventListener('click', openMgLoginModal);
+    $('#mg-login-cancel').addEventListener('click', closeMgLoginModal);
+    $('#mg-login-confirm').addEventListener('click', loginAsGM);
+    $('#mg-password-input').addEventListener('keydown', e => { if (e.key === 'Enter') loginAsGM(); });
+
+    // MG Tabs
+    document.addEventListener('click', function(e) {
+        const tabBtn = e.target.closest('.mg-tab-btn');
+        if (tabBtn) {
+            $$('.mg-tab-btn').forEach(b => b.classList.remove('active', 'btn-primary'));
+            $$('.mg-tab-btn').forEach(b => b.classList.add('btn-secondary'));
+            tabBtn.classList.add('active', 'btn-primary');
+            tabBtn.classList.remove('btn-secondary');
+
+            $$('.mg-tab-content').forEach(c => c.classList.remove('active'));
+            $('#' + tabBtn.dataset.mgTab).classList.add('active');
+        }
+
+        // MG Save Content buttons
+        const saveBtn = e.target.closest('.mg-save-content-btn');
+        if (saveBtn) {
+            const target = saveBtn.dataset.target;
+            const textVal = $('#mg-content-' + target).value;
+            saveMgContent(target, textVal);
+        }
+    });
+
+    // Broadcast MG message
+    $('#mg-send-broadcast-btn').addEventListener('click', function() {
+        const msg = $('#mg-broadcast-input').value.trim();
+        if (!msg) {
+            showToast('⚠ Wpisz treść komunikatu!', 3000);
+            return;
+        }
+        if (!isFirebaseInitialized) return;
+
+        db.collection('sessions').doc(mpState.room).set({
+            broadcast: msg,
+            broadcastSender: mpState.playerId,
+            broadcastTimestamp: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true }).then(() => {
+            showToast('📢 Komunikat wysłany do całej drużyny!');
+            $('#mg-broadcast-input').value = '';
+        });
+    });
+
+    // Accordion toggle
     document.addEventListener('click', function(e) {
         const header = e.target.closest('.section-header');
         if (!header) return;
@@ -763,7 +865,7 @@ function setupEventListeners() {
     });
 
     $('#char-faction').addEventListener('change', function() {
-        if (mpState.inspectingPlayerId !== null || !mpState.isEditable) return;
+        if (mpState.inspectingPlayerId !== null || !mpState.isEditable || mpState.isGM) return;
         const customGroup = $('#custom-faction-group');
         if (this.value === '__custom__') {
             customGroup.classList.remove('hidden');
@@ -777,18 +879,14 @@ function setupEventListeners() {
     document.addEventListener('click', function(e) {
         const btn = e.target.closest('[data-action]');
         if (!btn) return;
-        if (mpState.inspectingPlayerId !== null || !mpState.isEditable) return;
+        if (mpState.inspectingPlayerId !== null || !mpState.isEditable || mpState.isGM) return;
 
         const action = btn.dataset.action;
-
-        if (btn.classList.contains('btn-plus') || btn.classList.contains('btn-minus')) {
-            pulseButton(btn);
-        }
+        if (btn.classList.contains('btn-plus') || btn.classList.contains('btn-minus')) pulseButton(btn);
 
         if (action === 'attr-inc' || action === 'attr-dec') {
             const attrKey = btn.dataset.attr;
-            const delta = action === 'attr-inc' ? 1 : -1;
-            state.attributes[attrKey] = clamp(state.attributes[attrKey] + delta, ATTR_MIN, ATTR_MAX);
+            state.attributes[attrKey] = clamp(state.attributes[attrKey] + (action === 'attr-inc' ? 1 : -1), ATTR_MIN, ATTR_MAX);
             renderAttributes();
             triggerCloudSave();
             return;
@@ -796,24 +894,21 @@ function setupEventListeners() {
 
         if (action === 'skill-inc' || action === 'skill-dec') {
             const skillName = btn.dataset.skill;
-            const delta = action === 'skill-inc' ? 1 : -1;
-            state.skills[skillName] = clamp(state.skills[skillName] + delta, SKILL_MIN, SKILL_MAX);
+            state.skills[skillName] = clamp(state.skills[skillName] + (action === 'skill-inc' ? 1 : -1), SKILL_MIN, SKILL_MAX);
             renderSkills();
             triggerCloudSave();
             return;
         }
 
         if (action === 'hp-inc' || action === 'hp-dec') {
-            const delta = action === 'hp-inc' ? 1 : -1;
-            state.health.hp = clamp(state.health.hp + delta, 0, 999);
+            state.health.hp = clamp(state.health.hp + (action === 'hp-inc' ? 1 : -1), 0, 999);
             renderHealth();
             triggerCloudSave();
             return;
         }
 
         if (action === 'ap-inc' || action === 'ap-dec') {
-            const delta = action === 'ap-inc' ? 1 : -1;
-            state.health.ap = clamp(state.health.ap + delta, 0, 99);
+            state.health.ap = clamp(state.health.ap + (action === 'ap-inc' ? 1 : -1), 0, 99);
             renderHealth();
             triggerCloudSave();
             return;
@@ -821,16 +916,11 @@ function setupEventListeners() {
 
         if (action === 'toggle-status') {
             const statusName = btn.dataset.status;
-            const isActive = state.status.includes(statusName);
-
-            if (isActive) {
+            if (state.status.includes(statusName)) {
                 state.status = state.status.filter(s => s !== statusName);
             } else {
-                if (statusName === 'Zdrowy') {
-                    state.status = state.status.filter(s => s !== 'Ranny' && s !== 'Ciężko ranny');
-                } else if (statusName === 'Ranny' || statusName === 'Ciężko ranny') {
-                    state.status = state.status.filter(s => s !== 'Zdrowy' && s !== 'Ranny' && s !== 'Ciężko ranny');
-                }
+                if (statusName === 'Zdrowy') state.status = state.status.filter(s => s !== 'Ranny' && s !== 'Ciężko ranny');
+                else if (statusName === 'Ranny' || statusName === 'Ciężko ranny') state.status = state.status.filter(s => s !== 'Zdrowy' && s !== 'Ranny' && s !== 'Ciężko ranny');
                 state.status.push(statusName);
             }
             renderHealth();
@@ -840,45 +930,39 @@ function setupEventListeners() {
 
         if (action === 'ammo-inc' || action === 'ammo-dec') {
             const weaponId = btn.dataset.weaponId;
-            const weapon = state.weapons.find(w => w.id === weaponId);
-            if (!weapon) return;
-            const delta = action === 'ammo-inc' ? 1 : -1;
-            weapon.ammo = clamp(weapon.ammo + delta, 0, 9999);
+            const w = state.weapons.find(w => w.id === weaponId);
+            if (!w) return;
+            w.ammo = clamp(w.ammo + (action === 'ammo-inc' ? 1 : -1), 0, 9999);
             renderAllWeapons();
             triggerCloudSave();
             return;
         }
 
         if (action === 'remove-weapon') {
-            const weaponId = btn.dataset.weaponId;
-            state.weapons = state.weapons.filter(w => w.id !== weaponId);
+            state.weapons = state.weapons.filter(w => w.id !== btn.dataset.weaponId);
             renderAllWeapons();
             triggerCloudSave();
             return;
         }
 
         if (action === 'item-qty-inc' || action === 'item-qty-dec') {
-            const itemId = btn.dataset.itemId;
-            const item = state.items.find(i => i.id === itemId);
-            if (!item) return;
-            const delta = action === 'item-qty-inc' ? 1 : -1;
-            item.quantity = clamp(item.quantity + delta, 0, 9999);
+            const i = state.items.find(it => it.id === btn.dataset.itemId);
+            if (!i) return;
+            i.quantity = clamp(i.quantity + (action === 'item-qty-inc' ? 1 : -1), 0, 9999);
             renderAllItems();
             triggerCloudSave();
             return;
         }
 
         if (action === 'remove-item') {
-            const itemId = btn.dataset.itemId;
-            state.items = state.items.filter(i => i.id !== itemId);
+            state.items = state.items.filter(it => it.id !== btn.dataset.itemId);
             renderAllItems();
             triggerCloudSave();
             return;
         }
 
         if (action === 'remove-mutation') {
-            const mutationId = btn.dataset.mutationId;
-            state.mutations = state.mutations.filter(m => m.id !== mutationId);
+            state.mutations = state.mutations.filter(m => m.id !== btn.dataset.mutationId);
             renderAllMutations();
             triggerCloudSave();
             return;
@@ -886,8 +970,7 @@ function setupEventListeners() {
     });
 
     document.addEventListener('input', function(e) {
-        if (mpState.inspectingPlayerId !== null || !mpState.isEditable) return;
-        
+        if (mpState.inspectingPlayerId !== null || !mpState.isEditable || mpState.isGM) return;
         if (e.target.id === 'radiation-slider') {
             const val = parseInt(e.target.value);
             state.health.radiation = val;
@@ -901,69 +984,20 @@ function setupEventListeners() {
         }
     });
 
-    $('#btn-add-weapon').addEventListener('click', function() {
-        if (mpState.inspectingPlayerId !== null || !mpState.isEditable) return;
-        state.weapons.push({ id: generateId(), name: '', damage: '', ammo: 30 });
-        renderAllWeapons();
-        triggerCloudSave();
-    });
-
-    $('#btn-add-item').addEventListener('click', function() {
-        if (mpState.inspectingPlayerId !== null || !mpState.isEditable) return;
-        state.items.push({ id: generateId(), name: '', quantity: 1, description: '' });
-        renderAllItems();
-        triggerCloudSave();
-    });
-
-    $('#btn-add-mutation').addEventListener('click', function() {
-        if (mpState.inspectingPlayerId !== null || !mpState.isEditable) return;
-        state.mutations.push({ id: generateId(), name: '', description: '' });
-        renderAllMutations();
-        triggerCloudSave();
-    });
+    $('#btn-add-weapon').addEventListener('click', () => { if (!mpState.isGM) { state.weapons.push({ id: generateId(), name: '', damage: '', ammo: 30 }); renderAllWeapons(); triggerCloudSave(); } });
+    $('#btn-add-item').addEventListener('click', () => { if (!mpState.isGM) { state.items.push({ id: generateId(), name: '', quantity: 1, description: '' }); renderAllItems(); triggerCloudSave(); } });
+    $('#btn-add-mutation').addEventListener('click', () => { if (!mpState.isGM) { state.mutations.push({ id: generateId(), name: '', description: '' }); renderAllMutations(); triggerCloudSave(); } });
 
     $('#btn-export').addEventListener('click', exportJSON);
+    $('#btn-import').addEventListener('click', () => { if (!mpState.isGM) $('#file-import').click(); });
+    $('#file-import').addEventListener('change', e => { if (e.target.files.length > 0) { importJSON(e.target.files[0]); e.target.value = ''; } });
+    $('#btn-new').addEventListener('click', () => { if (!mpState.isGM) showModal('Nowa Karta Postaci', 'Czy na pewno chcesz utworzyć nową kartę?', resetCharacter); });
 
-    $('#btn-import').addEventListener('click', function() {
-        if (mpState.inspectingPlayerId !== null || !mpState.isEditable) return;
-        $('#file-import').click();
-    });
-
-    $('#file-import').addEventListener('change', function(e) {
-        if (e.target.files.length > 0) {
-            importJSON(e.target.files[0]);
-            e.target.value = '';
-        }
-    });
-
-    $('#btn-new').addEventListener('click', function() {
-        if (mpState.inspectingPlayerId !== null || !mpState.isEditable) return;
-        showModal(
-            'Nowa Karta Postaci',
-            'Czy na pewno chcesz utworzyć nową kartę? Obecne dane zostaną nadpisane na chmurze.',
-            resetCharacter
-        );
-    });
-
-    $('#modal-confirm-btn').addEventListener('click', function() {
-        if (modalCallback) modalCallback();
-        hideModal();
-    });
-
+    $('#modal-confirm-btn').addEventListener('click', () => { if (modalCallback) modalCallback(); hideModal(); });
     $('#modal-cancel').addEventListener('click', hideModal);
-    $('#modal-confirm').addEventListener('click', function(e) {
-        if (e.target === this) hideModal();
-    });
-
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') {
-            const modal = $('#modal-confirm');
-            if (!modal.classList.contains('hidden')) hideModal();
-        }
-    });
+    $('#modal-confirm').addEventListener('click', e => { if (e.target === this) hideModal(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') { hideModal(); closeMgLoginModal(); } });
 }
-
-// ─── INICJALIZACJA ───
 
 document.addEventListener('DOMContentLoaded', function() {
     $('#mp-player-name').value = 'Gracz_' + Math.floor(Math.random() * 900 + 100);

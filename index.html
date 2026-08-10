@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Karta Postaci — Neuroshima RPG (Multiplayer)</title>
-    <meta name="description" content="Generator kart postaci do gry RPG w klimacie postapokaliptycznym z obsługą wielu graczy na żywo. System Neuroshima z atrybutami S.P.E.C.I.A.L.">
+    <title>Karta Postaci — Neuroshima RPG (Multiplayer + MG)</title>
+    <meta name="description" content="Generator kart postaci do gry RPG w klimacie postapokaliptycznym z obsługą wielu graczy i panelem Mistrza Gry na żywo.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
-    <!-- Firebase SDK Compat (bez modułów, działa bezpośrednio w przeglądarce) -->
+    <!-- Firebase SDK Compat -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 </head>
@@ -28,6 +28,7 @@
                 <span class="mp-label">GRACZ:</span>
                 <input type="text" id="mp-player-name" placeholder="Twoje imię / nick..." autocomplete="off">
                 <button class="btn btn-primary btn-sm" id="mp-connect-btn">Połącz</button>
+                <button class="btn btn-accent btn-sm" id="mp-mg-login-btn" title="Panel Mistrza Gry">👑 Panel MG</button>
             </div>
             <div class="mp-status" id="mp-status-indicator">
                 <span class="status-dot"></span> <span id="mp-status-text">Rozłączony</span>
@@ -55,6 +56,10 @@
                     <span class="btn-icon">←</span>
                     <span class="btn-text">Moja Postać</span>
                 </button>
+                <button class="btn btn-secondary hidden" id="mp-back-to-mg" title="Wróć do Panelu MG">
+                    <span class="btn-icon">👑</span>
+                    <span class="btn-text">Powrót do MG</span>
+                </button>
                 <button class="btn btn-secondary hidden" id="btn-toggle-edit" title="Przełącz tryb edycji / podglądu">
                     <span class="btn-icon">🔒</span>
                     <span class="btn-text">Zablokuj edycję</span>
@@ -76,6 +81,7 @@
         </div>
     </header>
 
+    <!-- MAIN CONTAINER (Character Sheet) -->
     <main class="sheet-container" id="sheet-main-container">
 
         <section class="sheet-section" id="section-info">
@@ -222,11 +228,106 @@
 
     </main>
 
+    <!-- MG DASHBOARD CONTAINER (Hidden by default) -->
+    <main class="sheet-container hidden" id="mg-dashboard-container">
+        <div class="mg-nav-tabs">
+            <button class="btn btn-primary mg-tab-btn active" data-mg-tab="mg-players">⚔️ Drużyna</button>
+            <button class="btn btn-secondary mg-tab-btn" data-mg-tab="mg-broadcast">📢 Komunikaty</button>
+            <button class="btn btn-secondary mg-tab-btn" data-mg-tab="mg-locations">🗺️ Lokacje</button>
+            <button class="btn btn-secondary mg-tab-btn" data-mg-tab="mg-story">📜 Fabuła</button>
+            <button class="btn btn-secondary mg-tab-btn" data-mg-tab="mg-npcs">👤 NPC</button>
+            <button class="btn btn-secondary mg-tab-btn" data-mg-tab="mg-notes">📓 Notatki MG</button>
+        </div>
+
+        <!-- Tab 1: Players Management -->
+        <div class="mg-tab-content active" id="mg-players">
+            <div class="mg-section-title">Zarządzanie Postaciami Graczy</div>
+            <div id="mg-players-list-container" class="mg-grid">
+                <p class="text-muted">Ładowanie graczy z sesji...</p>
+            </div>
+        </div>
+
+        <!-- Tab 2: Broadcast Messages -->
+        <div class="mg-tab-content" id="mg-broadcast">
+            <div class="mg-section-title">Wyślij Komunikat do Wszystkých Graczy</div>
+            <div class="sheet-section" style="padding: 1.5rem;">
+                <div class="form-group">
+                    <label>Treść komunikatu / Ostrzeżenia</label>
+                    <textarea id="mg-broadcast-input" rows="4" placeholder="Wpisz komunikat, który wyświetli się wszystkim graczom na ekranie..."></textarea>
+                </div>
+                <button class="btn btn-primary" id="mg-send-broadcast-btn" style="margin-top: 1rem;">Wyślij komunikat do drużyny</button>
+            </div>
+        </div>
+
+        <!-- Tab 3: Locations -->
+        <div class="mg-tab-content" id="mg-locations">
+            <div class="mg-section-title">Opisy Lokacji</div>
+            <div class="sheet-section" style="padding: 1.5rem;">
+                <div class="form-group full-width">
+                    <textarea id="mg-content-locations" rows="12" placeholder="Opis miast, posterunków, ruin Molocha, stref skażonych..."></textarea>
+                </div>
+                <button class="btn btn-accent mg-save-content-btn" data-target="locations" style="margin-top: 1rem;">Zapisz Lokacje</button>
+            </div>
+        </div>
+
+        <!-- Tab 4: Story / Plot -->
+        <div class="mg-tab-content" id="mg-story">
+            <div class="mg-section-title">Wątki Fabularne i Scenariusz</div>
+            <div class="sheet-section" style="padding: 1.5rem;">
+                <div class="form-group full-width">
+                    <textarea id="mg-content-story" rows="12" placeholder="Główny wątek, intrygi, cele misji, zwroty akcji..."></textarea>
+                </div>
+                <button class="btn btn-accent mg-save-content-btn" data-target="story" style="margin-top: 1rem;">Zapisz Fabułę</button>
+            </div>
+        </div>
+
+        <!-- Tab 5: NPCs -->
+        <div class="mg-tab-content" id="mg-npcs">
+            <div class="mg-section-title">Przygotowani NPC</div>
+            <div class="sheet-section" style="padding: 1.5rem;">
+                <div class="form-group full-width">
+                    <textarea id="mg-content-npcs" rows="12" placeholder="Lista napotkanych postaci, handlarze, fixerzy, wrogowie, statystyki..."></textarea>
+                </div>
+                <button class="btn btn-accent mg-save-content-btn" data-target="npcs" style="margin-top: 1rem;">Zapisz NPC</button>
+            </div>
+        </div>
+
+        <!-- Tab 6: GM Notes -->
+        <div class="mg-tab-content" id="mg-notes">
+            <div class="mg-section-title">Prywatne Notatki Mistrza Gry</div>
+            <div class="sheet-section" style="padding: 1.5rem;">
+                <div class="form-group full-width">
+                    <textarea id="mg-content-notes" rows="12" placeholder="Pomysły na sesję, loot, rzuty kośćmi w ukryciu..."></textarea>
+                </div>
+                <button class="btn btn-accent mg-save-content-btn" data-target="notes" style="margin-top: 1rem;">Zapisz Notatki</button>
+            </div>
+        </div>
+    </main>
+
     <footer class="main-footer">
-        <p>☢ NEUROSHIMA RPG — GENERATOR KART POSTACI (MULTIPLAYER) ☢</p>
+        <p>☢ NEUROSHIMA RPG — GENERATOR KART POSTACI (MULTIPLAYER + MG) ☢</p>
         <p class="footer-sub">Dane synchronizują się automatycznie w czasie rzeczywistym</p>
     </footer>
 
+    <!-- GM Password Modal -->
+    <div class="modal-overlay hidden" id="modal-mg-login">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-icon">👑</span>
+                <h3>Autoryzacja Mistrza Gry</h3>
+            </div>
+            <p>Wprowadź tajne hasło dostępu do panelu Mistrza Gry:</p>
+            <div class="form-group" style="margin-bottom: 1.25rem;">
+                <input type="password" id="mg-password-input" placeholder="Hasło MG..." autocomplete="current-password">
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="mg-login-cancel">Anuluj</button>
+                <button class="btn btn-primary" id="mg-login-confirm">Zaloguj jako MG</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
     <div class="modal-overlay hidden" id="modal-confirm">
         <div class="modal">
             <div class="modal-header">
@@ -241,6 +342,7 @@
         </div>
     </div>
 
+    <!-- Toast notification -->
     <div class="toast hidden" id="toast">
         <span id="toast-message"></span>
     </div>
