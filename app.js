@@ -4,12 +4,12 @@
 
 // ─── FIREBASE CONFIGURATION ───
 const firebaseConfig = {
-    apiKey: "AIzaSyD-TUTAJ_WKLEJ_SWOJ_KLUCZ",
-    authDomain: "twoj-projekt.firebaseapp.com",
-    projectId: "twoj-projekt",
-    storageBucket: "twoj-projekt.appspot.com",
-    messagingSenderId: "123456789012",
-    appId: "1:123456789012:web:abcdef123456789"
+  apiKey: "AIzaSyBlP27hV8sTGfqk898i1fFVvqiNE8etKHI",
+  authDomain: "neuroshimarpg-1efb1.firebaseapp.com",
+  projectId: "neuroshimarpg-1efb1",
+  storageBucket: "neuroshimarpg-1efb1.firebasestorage.app",
+  messagingSenderId: "672079265154",
+  appId: "1:672079265154:web:e2d66965662df9ea38239b"
 };
 
 let db = null;
