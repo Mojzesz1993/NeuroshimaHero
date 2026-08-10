@@ -3,6 +3,7 @@
    ═══════════════════════════════════════════════════════ */
 
 // ─── KONFIGURACJA FIREBASE & MG ───
+// Wklej tutaj dane ze swojego projektu w konsoli Firebase
 const firebaseConfig = {
     apiKey: "AIzaSyD-TUTAJ_WKLEJ_SWOJ_KLUCZ",
     authDomain: "twoj-projekt.firebaseapp.com",
@@ -808,11 +809,12 @@ function setupEventListeners() {
     $('#mp-back-to-mg').addEventListener('click', activateGMMode);
     $('#btn-toggle-edit').addEventListener('click', toggleEditMode);
 
-    // MG Modal
+    // MG Modal & Przycisk Wyjścia
     $('#mp-mg-login-btn').addEventListener('click', openMgLoginModal);
     $('#mg-login-cancel').addEventListener('click', closeMgLoginModal);
     $('#mg-login-confirm').addEventListener('click', loginAsGM);
     $('#mg-password-input').addEventListener('keydown', e => { if (e.key === 'Enter') loginAsGM(); });
+    $('#mg-logout-btn').addEventListener('click', deactivateGMMode);
 
     // MG Tabs
     document.addEventListener('click', function(e) {

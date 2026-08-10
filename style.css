@@ -474,7 +474,7 @@ select option { background: var(--bg-primary); color: var(--text-primary); }
     border-bottom: 1px solid var(--border);
 }
 .skill-row { display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0.85rem; border-bottom: 1px solid rgba(42, 42, 56, 0.4); }
-.skill-name { font-size: 0.9kt; color: var(--text-secondary); }
+.skill-name { font-size: 0.9rem; color: var(--text-secondary); }
 .skill-value { font-family: var(--font-mono); font-size: 1.1rem; font-weight: 700; color: var(--text-primary); }
 
 /* ─── HEALTH & STATUS ─── */
@@ -535,7 +535,7 @@ select option { background: var(--bg-primary); color: var(--text-primary); }
 
 /* ─── FOOTER & MODALS ─── */
 .main-footer { text-align: center; padding: 2rem 1rem; border-top: 1px solid var(--border); margin-top: 2rem; }
-.main-footer p { font-family: var(--font-display); font-size: 0.7let; color: var(--text-muted); }
+.main-footer p { font-family: var(--font-display); font-size: 0.7rem; color: var(--text-muted); }
 .footer-sub { font-family: var(--font-mono) !important; font-size: 0.65rem !important; margin-top: 0.5rem; opacity: 0.5; }
 
 .modal-overlay {
