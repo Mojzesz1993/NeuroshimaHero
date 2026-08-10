@@ -1,19 +1,27 @@
+Masz w 100% rację. Automatyczna synchronizacja w obie strony (bez żadnego klikania „Zapisz”) to absolutny standard i najlepsze rozwiązanie dla aplikacji czasu rzeczywistego.
+
+Wcześniej rozdzieliłem to przyciskiem, ponieważ w czystym JavaScripcie ciągłe nadpisywanie całej strony danymi z chmury powoduje tzw. „kradzież focusu” (jeśli gracz wpisuje historię postaci, a MG w tym samym momencie odbierze mu HP, graczowi zniknie kursor z pola tekstowego).
+
+Rozwiązałem to za pomocą **chirurgicznych aktualizacji DOM**. Oznacza to, że Panel MG wysyła nowe statystyki w tle, a przeglądarka gracza podmienia *tylko* same cyferki zdrowia i punktów akcji, nie przerywając mu gry ani pisania notatek. Zniknął też całkowicie przycisk "Zapisz zmiany gracza" – teraz Mistrz Gry po prostu wpisuje nowe HP, a chmura aktualizuje się sama po pół sekundy.
+
+Oto ostateczna, kompletna wersja pliku **`app.js`**, która realizuje płynną synchronizację dwukierunkową. Podmień całą jego zawartość:
+
+```javascript
 /* ═══════════════════════════════════════════════════════
    NEUROSHIMA RPG — KARTA POSTACI (MULTIPLAYER + MG LOGIC)
    ═══════════════════════════════════════════════════════ */
 
 // ─── KONFIGURACJA FIREBASE & MG ───
-// Wklej tutaj dane ze swojego projektu w konsoli Firebase
 const firebaseConfig = {
-  apiKey: "AIzaSyBlP27hV8sTGfqk898i1fFVvqiNE8etKHI",
-  authDomain: "neuroshimarpg-1efb1.firebaseapp.com",
-  projectId: "neuroshimarpg-1efb1",
-  storageBucket: "neuroshimarpg-1efb1.firebasestorage.app",
-  messagingSenderId: "672079265154",
-  appId: "1:672079265154:web:e2d66965662df9ea38239b"
+    apiKey: "AIzaSyD-TUTAJ_WKLEJ_SWOJ_KLUCZ",
+    authDomain: "twoj-projekt.firebaseapp.com",
+    projectId: "twoj-projekt",
+    storageBucket: "twoj-projekt.appspot.com",
+    messagingSenderId: "123456789012",
+    appId: "1:123456789012:web:abcdef123456789"
 };
 
-// TAJNE HASŁO DO PANELU MISTRZA GRY (możesz je zmienić)
+// TAJNE HASŁO DO PANELU MISTRZA GRY
 const GM_PASSWORD = "neuroshima2026";
 
 let db = null;
@@ -36,13 +44,16 @@ let mpState = {
     playerName: 'Wędrowiec ' + Math.floor(Math.random() * 100),
     isConnected: false,
     isEditable: true,
-    isGM: false,              // Czy użytkownik jest zalogowany jako MG
+    isGM: false,
     inspectingPlayerId: null,
     unsubscribe: null,
     unsubscribeList: null,
     unsubscribeSession: null,
-    unsubscribeMgPlayers: null
+    unsubscribeMgPlayers: null,
+    unsubscribeMine: null
 };
+
+let gmSaveTimeouts = {}; // Do auto-zapisu MG
 
 // ─── DEFINICJE DANYCH ───
 
@@ -142,7 +153,7 @@ function pulseButton(btn) {
     setTimeout(() => btn.classList.remove('pulse'), 250);
 }
 
-// ─── RENDEROWANIE: KARTA POSTACI ───
+// ─── RENDEROWANIE ───
 
 function renderAttributes() {
     const container = $('#content-attributes');
@@ -304,6 +315,8 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
+// ─── LOGIKA STANU ───
+
 function gatherState() {
     state.info.name = $('#char-name').value.trim();
     state.info.nickname = $('#char-nickname').value.trim();
@@ -413,7 +426,7 @@ function loadState(newState) {
     renderAllMutations();
 }
 
-// ─── MULTIPLAYER & MG SYNC (FIREBASE) ───
+// ─── MULTIPLAYER SYNC (FIREBASE) ───
 
 let saveTimeout = null;
 function triggerCloudSave() {
@@ -461,7 +474,7 @@ function connectToSession() {
     if (mpState.unsubscribeList) mpState.unsubscribeList();
     if (mpState.unsubscribeSession) mpState.unsubscribeSession();
 
-    // Nasłuchuj graczy do listy online
+    // Nasłuchuj graczy do paska online
     const playersRef = db.collection('sessions').doc(mpState.room).collection('players');
     mpState.unsubscribeList = playersRef.onSnapshot(snapshot => {
         const playersListEl = $('#mp-players-list');
@@ -484,7 +497,7 @@ function connectToSession() {
                 <span class="mp-player-hp">[HP: ${pData.hp}/${pData.maxHp}]</span>
             `;
             chip.addEventListener('click', () => {
-                if (mpState.isGM) return; // MG ma swój panel zarządzania
+                if (mpState.isGM) return;
                 if (isMe) switchToMyCharacter();
                 else inspectPlayer(pId, pData.playerName);
             });
@@ -492,13 +505,12 @@ function connectToSession() {
         });
     });
 
-    // Nasłuchuj ogólnych komunikatów od MG dla wszystkich graczy
+    // Nasłuchuj komunikatów MG
     const sessionRef = db.collection('sessions').doc(mpState.room);
     mpState.unsubscribeSession = sessionRef.onSnapshot(doc => {
         if (doc.exists) {
             const sData = doc.data();
             if (sData.broadcast && sData.broadcastTimestamp) {
-                // Pokaż komunikat jeśli jest nowy (ostatnie 15 sekund)
                 const now = Date.now();
                 const bTime = sData.broadcastTimestamp.toMillis ? sData.broadcastTimestamp.toMillis() : now;
                 if (now - bTime < 15000 && sData.broadcastSender !== mpState.playerId) {
@@ -549,7 +561,47 @@ function switchToMyCharacter() {
     $('#mp-back-to-mg').classList.add('hidden');
 
     showToast('✏ Wrzucono do Twojej postaci');
-    loadState(state);
+    
+    loadState(state); // Pełne załadowanie bazy
+
+    // Chirurgiczne nasłuchiwanie chmury (MG -> Gracz) bez utraty focusu
+    if (mpState.isConnected && isFirebaseInitialized && !mpState.isGM) {
+        if (mpState.unsubscribeMine) mpState.unsubscribeMine();
+
+        const myDocRef = db.collection('sessions').doc(mpState.room).collection('players').doc(mpState.playerId);
+        
+        mpState.unsubscribeMine = myDocRef.onSnapshot(doc => {
+            if (doc.metadata.hasPendingWrites) return; // Ignoruj to co sam właśnie wpisujesz
+
+            if (doc.exists && mpState.inspectingPlayerId === null) {
+                const cloudData = doc.data();
+                if (cloudData && cloudData.data && cloudData.data.health) {
+                    const h = cloudData.data.health;
+                    
+                    state.health.hp = h.hp;
+                    state.health.maxHp = h.maxHp;
+                    state.health.ap = h.ap;
+                    state.health.radiation = h.radiation;
+
+                    // Modyfikacja samych węzłów tekstowych
+                    const hpEl = $('#hp-value');
+                    if (hpEl) hpEl.textContent = `${h.hp} / ${h.maxHp}`;
+                    
+                    const apEl = $('#ap-value');
+                    if (apEl) apEl.textContent = h.ap;
+                    
+                    const radVal = $('#radiation-value');
+                    if (radVal) radVal.textContent = `${h.radiation}%`;
+                    
+                    const radFill = $('#radiation-fill');
+                    if (radFill) radFill.style.width = `${h.radiation}%`;
+
+                    const radSlider = $('#radiation-slider');
+                    if (radSlider) radSlider.value = h.radiation;
+                }
+            }
+        });
+    }
 }
 
 function toggleEditMode() {
@@ -615,9 +667,7 @@ function activateGMMode() {
     $('#mp-back-to-mine').classList.add('hidden');
     $('#mp-back-to-mg').classList.remove('hidden');
 
-    // Załaduj zawartość notatek MG z Firestore
     loadMgContent();
-    // Załaduj listę graczy do zarządzania
     initMgPlayersManager();
 }
 
@@ -636,6 +686,7 @@ function deactivateGMMode() {
     showToast('Wylogowano z Panelu MG');
 }
 
+// Inteligentna, dwukierunkowa lista graczy
 function initMgPlayersManager() {
     if (!isFirebaseInitialized) return;
     const container = $('#mg-players-list-container');
@@ -643,94 +694,82 @@ function initMgPlayersManager() {
 
     if (mpState.unsubscribeMgPlayers) mpState.unsubscribeMgPlayers();
 
+    container.innerHTML = ''; // Czyścimy przed startem nasłuchu
+
     mpState.unsubscribeMgPlayers = playersRef.onSnapshot(snapshot => {
-        container.innerHTML = '';
         if (snapshot.empty) {
             container.innerHTML = '<p class="text-muted">Brak podłączonych graczy w pokoju.</p>';
             return;
         }
 
-        snapshot.forEach(doc => {
+        const emptyMsg = container.querySelector('.text-muted');
+        if (emptyMsg) emptyMsg.remove();
+
+        snapshot.docChanges().forEach(change => {
+            const doc = change.doc;
             const pId = doc.id;
             const p = doc.data();
             const d = p.data || {};
 
-            const card = document.createElement('div');
-            card.className = 'mg-player-card';
-            card.innerHTML = `
-                <div class="mg-player-card-header">
-                    <span>${escapeHtml(p.playerName)} ➔ <strong>${escapeHtml(p.characterName || 'Bez imienia')}</strong> (${escapeHtml(p.faction || 'Brak frakcji')})</span>
-                </div>
-                <div class="mg-player-controls-grid">
-                    <div class="form-group">
-                        <label>HP (Aktualne / Max)</label>
-                        <div class="mg-inline-inputs">
-                            <input type="number" class="mg-input-hp" data-pid="${pId}" value="${d.health ? d.health.hp : 100}">
-                            <span>/</span>
-                            <input type="number" class="mg-input-maxhp" data-pid="${pId}" value="${d.health ? d.health.maxHp : 100}">
+            if (change.type === 'added') {
+                const card = document.createElement('div');
+                card.className = 'mg-player-card';
+                card.id = `mg-card-${pId}`;
+                card.innerHTML = `
+                    <div class="mg-player-card-header">
+                        <span id="mg-name-${pId}">${escapeHtml(p.playerName)} ➔ <strong>${escapeHtml(p.characterName || 'Bez imienia')}</strong> (${escapeHtml(p.faction || 'Brak frakcji')})</span>
+                    </div>
+                    <div class="mg-player-controls-grid">
+                        <div class="form-group">
+                            <label>HP (Aktualne / Max)</label>
+                            <div class="mg-inline-inputs">
+                                <input type="number" class="mg-input-hp" data-pid="${pId}" value="${d.health ? d.health.hp : 100}">
+                                <span>/</span>
+                                <input type="number" class="mg-input-maxhp" data-pid="${pId}" value="${d.health ? d.health.maxHp : 100}">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Punkty Akcji (AP)</label>
+                            <input type="number" class="mg-input-ap" data-pid="${pId}" value="${d.health ? d.health.ap : 10}">
+                        </div>
+                        <div class="form-group">
+                            <label>Promieniowanie (%)</label>
+                            <input type="number" class="mg-input-rad" data-pid="${pId}" min="0" max="100" value="${d.health ? d.health.radiation : 0}">
                         </div>
                     </div>
-                    <div class="form-group">
-                        <label>Punkty Akcji (AP)</label>
-                        <input type="number" class="mg-input-ap" data-pid="${pId}" value="${d.health ? d.health.ap : 10}">
+                    <div class="mg-player-actions">
+                        <button class="btn btn-secondary btn-sm mg-inspect-player-btn" data-pid="${pId}" data-pname="${escapeHtml(p.playerName)}">👁 Podgląd pełnej karty</button>
                     </div>
-                    <div class="form-group">
-                        <label>Promieniowanie (%)</label>
-                        <input type="number" class="mg-input-rad" data-pid="${pId}" min="0" max="100" value="${d.health ? d.health.radiation : 0}">
-                    </div>
-                </div>
-                <div class="mg-player-actions">
-                    <button class="btn btn-primary btn-sm mg-save-player-btn" data-pid="${pId}">Zapisz zmiany gracza</button>
-                    <button class="btn btn-secondary btn-sm mg-inspect-player-btn" data-pid="${pId}" data-pname="${escapeHtml(p.playerName)}">Podgląd pełnej karty</button>
-                </div>
-            `;
-            container.appendChild(card);
+                `;
+                container.appendChild(card);
+            }
+            if (change.type === 'modified') {
+                const card = document.getElementById(`mg-card-${pId}`);
+                if (card) {
+                    document.getElementById(`mg-name-${pId}`).innerHTML = `${escapeHtml(p.playerName)} ➔ <strong>${escapeHtml(p.characterName || 'Bez imienia')}</strong> (${escapeHtml(p.faction || 'Brak frakcji')})`;
+                    
+                    // Nadpisz inputy TYLKO, jeśli MG w nich akurat nie pisze
+                    const hpInput = card.querySelector('.mg-input-hp');
+                    if (document.activeElement !== hpInput) hpInput.value = d.health ? d.health.hp : 100;
+                    
+                    const maxHpInput = card.querySelector('.mg-input-maxhp');
+                    if (document.activeElement !== maxHpInput) maxHpInput.value = d.health ? d.health.maxHp : 100;
+
+                    const apInput = card.querySelector('.mg-input-ap');
+                    if (document.activeElement !== apInput) apInput.value = d.health ? d.health.ap : 10;
+
+                    const radInput = card.querySelector('.mg-input-rad');
+                    if (document.activeElement !== radInput) radInput.value = d.health ? d.health.radiation : 0;
+                }
+            }
+            if (change.type === 'removed') {
+                const card = document.getElementById(`mg-card-${pId}`);
+                if (card) card.remove();
+            }
         });
     });
 }
 
-// Zapis edycji gracza przez MG
-document.addEventListener('click', function(e) {
-    if (e.target.classList.contains('mg-save-player-btn')) {
-        const pId = e.target.dataset.pid;
-        const card = e.target.closest('.mg-player-card');
-        const newHp = parseInt(card.querySelector('.mg-input-hp').value);
-        const newMaxHp = parseInt(card.querySelector('.mg-input-maxhp').value);
-        const newAp = parseInt(card.querySelector('.mg-input-ap').value);
-        const newRad = parseInt(card.querySelector('.mg-input-rad').value);
-
-        const docRef = db.collection('sessions').doc(mpState.room).collection('players').doc(pId);
-        docRef.get().then(doc => {
-            if (doc.exists) {
-                const pData = doc.data();
-                if (pData.data) {
-                    pData.data.health.hp = newHp;
-                    pData.data.health.maxHp = newMaxHp;
-                    pData.data.health.ap = newAp;
-                    pData.data.health.radiation = newRad;
-
-                    docRef.update({
-                        hp: newHp,
-                        maxHp: newMaxHp,
-                        data: pData.data
-                    }).then(() => {
-                        showToast('✓ Zaktualizowano postać gracza!');
-                    });
-                }
-            }
-        });
-    }
-
-    if (e.target.classList.contains('mg-inspect-player-btn')) {
-        const pId = e.target.dataset.pid;
-        const pName = e.target.dataset.pname;
-        deactivateGMMode();
-        inspectPlayer(pId, pName);
-        $('#mp-back-to-mg').classList.remove('hidden');
-    }
-});
-
-// Zapis zawartości notatek, lokacji, fabuły i NPC w chmurze
 function saveMgContent(targetKey, textValue) {
     if (!isFirebaseInitialized) return;
     const docRef = db.collection('sessions').doc(mpState.room).collection('gm_data').doc('content');
@@ -816,7 +855,16 @@ function setupEventListeners() {
     $('#mg-password-input').addEventListener('keydown', e => { if (e.key === 'Enter') loginAsGM(); });
     $('#mg-logout-btn').addEventListener('click', deactivateGMMode);
 
-    // MG Tabs
+    document.addEventListener('click', function(e) {
+        if (e.target.classList.contains('mg-inspect-player-btn')) {
+            const pId = e.target.dataset.pid;
+            const pName = e.target.dataset.pname;
+            deactivateGMMode();
+            inspectPlayer(pId, pName);
+            $('#mp-back-to-mg').classList.remove('hidden');
+        }
+    });
+
     document.addEventListener('click', function(e) {
         const tabBtn = e.target.closest('.mg-tab-btn');
         if (tabBtn) {
@@ -829,7 +877,6 @@ function setupEventListeners() {
             $('#' + tabBtn.dataset.mgTab).classList.add('active');
         }
 
-        // MG Save Content buttons
         const saveBtn = e.target.closest('.mg-save-content-btn');
         if (saveBtn) {
             const target = saveBtn.dataset.target;
@@ -838,7 +885,6 @@ function setupEventListeners() {
         }
     });
 
-    // Broadcast MG message
     $('#mg-send-broadcast-btn').addEventListener('click', function() {
         const msg = $('#mg-broadcast-input').value.trim();
         if (!msg) {
@@ -857,7 +903,6 @@ function setupEventListeners() {
         });
     });
 
-    // Accordion toggle
     document.addEventListener('click', function(e) {
         const header = e.target.closest('.section-header');
         if (!header) return;
@@ -972,7 +1017,42 @@ function setupEventListeners() {
     });
 
     document.addEventListener('input', function(e) {
-        if (mpState.inspectingPlayerId !== null || !mpState.isEditable || mpState.isGM) return;
+        
+        // AUTO-ZAPIS MG W TLE (BEZ KLIKANIA "ZAPISZ")
+        if (mpState.isGM) {
+            if (e.target.classList.contains('mg-input-hp') || 
+                e.target.classList.contains('mg-input-maxhp') || 
+                e.target.classList.contains('mg-input-ap') || 
+                e.target.classList.contains('mg-input-rad')) {
+                
+                const pId = e.target.dataset.pid;
+                if (gmSaveTimeouts[pId]) clearTimeout(gmSaveTimeouts[pId]);
+                
+                gmSaveTimeouts[pId] = setTimeout(() => {
+                    const card = document.getElementById(`mg-card-${pId}`);
+                    if (!card) return;
+
+                    const newHp = parseInt(card.querySelector('.mg-input-hp').value) || 0;
+                    const newMaxHp = parseInt(card.querySelector('.mg-input-maxhp').value) || 1;
+                    const newAp = parseInt(card.querySelector('.mg-input-ap').value) || 0;
+                    const newRad = parseInt(card.querySelector('.mg-input-rad').value) || 0;
+
+                    db.collection('sessions').doc(mpState.room).collection('players').doc(pId).update({
+                        hp: newHp,
+                        maxHp: newMaxHp,
+                        "data.health.hp": newHp,
+                        "data.health.maxHp": newMaxHp,
+                        "data.health.ap": newAp,
+                        "data.health.radiation": newRad
+                    });
+                }, 400); 
+            }
+            return;
+        }
+
+        // AUTO-ZAPIS GRACZA W TLE
+        if (mpState.inspectingPlayerId !== null || !mpState.isEditable) return;
+        
         if (e.target.id === 'radiation-slider') {
             const val = parseInt(e.target.value);
             state.health.radiation = val;
@@ -1008,3 +1088,5 @@ document.addEventListener('DOMContentLoaded', function() {
     renderHealth();
     setupEventListeners();
 });
+
+```
